@@ -21,10 +21,10 @@ class StudentAgent(Agent):
     def evaluate(self, board, reserves, player):
         """Simple evaluation: count own almost-wins and block opponent's."""
         # this version does not include factor of useable pieces, heuristic function etc.. could be furthur improved
-        owners, sizes = top_view(board)
+        owners, sizes = top_view(board) # who owns the top piece at (r,c): 0=empty, 1 or 2=player, 3=obstacle
         score = 0
-        opp = 3 - player
-        for line in LINES[WIN_LENGTH]:
+        opp = 3 - player # player number is 1 or 2, 3 - our number is the opponent number
+        for line in LINES[WIN_LENGTH]: # Loop over every possible 4 in a row line on the board
             own = opp_count = empty = 0
             for r, c in line:       # r,c refers to row, column respectively
                 cell = owners[r, c]
@@ -34,20 +34,21 @@ class StudentAgent(Agent):
                     opp_count += 1
                 elif cell == 0:
                     empty += 1
-                # cell == 3 is obstacle → line is dead, ignore
-            if own == WIN_LENGTH:
+                # cell == 3 is obstacle this line is dead, ignore
+            if own == WIN_LENGTH: # we win
                 score += 10000
-            elif opp_count == WIN_LENGTH:
+            elif opp_count == WIN_LENGTH: # opponent win
                 score -= 10000
-            elif own == WIN_LENGTH - 1 and empty == 1:
+            elif own == WIN_LENGTH - 1 and empty == 1: # we almost win
                 score += 800
-            elif opp_count == WIN_LENGTH - 1 and empty == 1:
+            elif opp_count == WIN_LENGTH - 1 and empty == 1: # opponent almost win
                 score -= 700
-            elif own == WIN_LENGTH - 2 and empty == 2:
+            elif own == WIN_LENGTH - 2 and empty == 2: # we have a 2 in a row
                 score += 60
-            elif opp_count == WIN_LENGTH - 2 and empty == 2: score -= 50
+            elif opp_count == WIN_LENGTH - 2 and empty == 2: score -= 50 # opponent have a 2 in a row
 
         # 2. Large piece control
+        # the larger the piece, more hard to cover it, award pieces controlling by their size on the board
         for r in range(4):
             for c in range(4):
                 if owners[r, c] == player and sizes[r, c] == LARGE:
@@ -55,41 +56,43 @@ class StudentAgent(Agent):
                 elif owners[r, c] == opp and sizes[r, c] == LARGE:
                     score -= 40
         # 3. Reserves
+        # the pieces still in hands, also award by their size, but this time is smaller than the on board
+        # since it is not controlling anything yet, and desired block may already controlled by opponent
         score += 30 * reserves[player][LARGE] + 15 * reserves[player][MEDIUM] + 5 * reserves[player][SMALL]
         score -= 30 * reserves[opp][LARGE] + 15 * reserves[opp][MEDIUM] + 5 * reserves[opp][SMALL]
         return score
     def _minimax(self, board, reserves, player, opponent, depth, deadline,
                  alpha, beta, maximizing):
-        if time.perf_counter() >= deadline:
+        if time.perf_counter() >= deadline: # stop when close to time limit 2s, our design it to stop at 1.85, leave some space for rest of the program
             return None, 0
 
-        if depth == 0:
+        if depth == 0: # we reached the depth we desired, in our design, look 3 steps ahead, us1->opponent->us2, we start evaluation at us2
             return None, self.evaluate(board, reserves, player)
 
-        moves = get_valid_moves(board, reserves, player if maximizing else opponent)
-        if not moves:
+        moves = get_valid_moves(board, reserves, player if maximizing else opponent) # Generate legal moves for the side that is about to play, support by the helper
+        if not moves: # no moves left, so a very bad state, award if we can force opponent get there, penalty if we move there
             return None, -1000 if maximizing else 1000
 
         best_move = None
         if maximizing:
             best_val = -np.inf
             for mv in moves:
-                b, r = copy_state(board, reserves)
+                b, r = copy_state(board, reserves) # make a copy and play/try on the copy
                 execute_move(b, r, player, mv)      # b-> board, r->reserves, mv->move
-                # immediate win?
+                # check if there is a move that make us immediate win
                 if check_winner(b, player) == player:
                     return mv, 10000
                 _, val = self._minimax(b, r, player, opponent, depth-1, deadline,
-                                       alpha, beta, False)
-                if val > best_val:
+                                       alpha, beta, False) # recursing, its opponent's turn 
+                if val > best_val: # keep the move that gives the highest score
                     best_val = val
                     best_move = mv
                 alpha = max(alpha, best_val)
-                if alpha >= beta:
+                if alpha >= beta: # alpha beta pruning
                     break
             return best_move, best_val
         else:
-            best_val = np.inf
+            best_val = np.inf # similar idea for opponent turn
             for mv in moves:
                 b, r = copy_state(board, reserves)
                 execute_move(b, r, opponent, mv)
@@ -119,9 +122,9 @@ class StudentAgent(Agent):
         # TODO: replace with your search. Keep (time.perf_counter() - start) < STEP_TIME_LIMIT - margin.
         # return random_move(board, reserves, player)
         start = time.perf_counter()
-        deadline = start + STEP_TIME_LIMIT - self.time_margin
+        deadline = start + STEP_TIME_LIMIT - self.time_margin # when to stop search
 
-        moves = get_valid_moves(board, reserves, player)
+        moves = get_valid_moves(board, reserves, player) # if no legal move at all, use default, but could just replace by None
         if not moves:
             return random_move(board, reserves, player)
 
@@ -143,17 +146,17 @@ class StudentAgent(Agent):
                 if check_winner(b2, opponent) == opponent:
                     opp_can_win = True
                     break
-            if not opp_can_win:
+            if not opp_can_win: # Only keep moves that do not let the opponent win immediately
                 safe_moves.append(mv)
 
-        candidates = safe_moves or moves
+        candidates = safe_moves or moves # the or moves is for situation: if every move will let opponent win, even we don't want, we have to play something
 
-        # Simple iterative deepening with time control
-        best_move = candidates[0]
+        # iterative deepening with time control
+        best_move = candidates[0] # initialize so even we run out of time, we still play something
         for depth in range(1, self.max_depth + 1):
-            if time.perf_counter() >= deadline:
+            if time.perf_counter() >= deadline: # if times almost up, stop search
                 break
-            move, val = self._minimax(
+            move, val = self._minimax(  # run our minimax then return best move found within time limit
                 board, reserves, player, opponent, depth, deadline,
                 alpha=-np.inf, beta=np.inf, maximizing=True
             )
