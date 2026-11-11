@@ -18,10 +18,10 @@ class StudentAgent(Agent):
         self.max_depth = 3  # maximum search depth, could be change later
         # self.cache = {}  # cache for memoization, may use in the future for speed imporvement
 
-    def evaluate(self, board, player):
+    def evaluate(self, board, reserves, player):
         """Simple evaluation: count own almost-wins and block opponent's."""
         # this version does not include factor of useable pieces, heuristic function etc.. could be furthur improved
-        owners, _ = top_view(board)
+        owners, sizes = top_view(board)
         score = 0
         opp = 3 - player
         for line in LINES[WIN_LENGTH]:
@@ -40,11 +40,23 @@ class StudentAgent(Agent):
             elif opp_count == WIN_LENGTH:
                 score -= 10000
             elif own == WIN_LENGTH - 1 and empty == 1:
-                score += 50
+                score += 800
             elif opp_count == WIN_LENGTH - 1 and empty == 1:
-                score -= 40
-            elif own == 2 and empty == 2:
-                score += 5
+                score -= 700
+            elif own == WIN_LENGTH - 2 and empty == 2:
+                score += 60
+            elif opp_count == WIN_LENGTH - 2 and empty == 2: score -= 50
+
+        # 2. Large piece control
+        for r in range(4):
+            for c in range(4):
+                if owners[r, c] == player and sizes[r, c] == LARGE:
+                    score += 40
+                elif owners[r, c] == opp and sizes[r, c] == LARGE:
+                    score -= 40
+        # 3. Reserves
+        score += 30 * reserves[player][LARGE] + 15 * reserves[player][MEDIUM] + 5 * reserves[player][SMALL]
+        score -= 30 * reserves[opp][LARGE] + 15 * reserves[opp][MEDIUM] + 5 * reserves[opp][SMALL]
         return score
     def _minimax(self, board, reserves, player, opponent, depth, deadline,
                  alpha, beta, maximizing):
@@ -52,7 +64,7 @@ class StudentAgent(Agent):
             return None, 0
 
         if depth == 0:
-            return None, self.evaluate(board, player)
+            return None, self.evaluate(board, reserves, player)
 
         moves = get_valid_moves(board, reserves, player if maximizing else opponent)
         if not moves:
