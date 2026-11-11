@@ -66,7 +66,7 @@ class StudentAgent(Agent):
         if time.perf_counter() >= deadline: # stop when close to time limit 2s, our design it to stop at 1.85, leave some space for rest of the program
             return None, 0
 
-        if depth == 0: # we reached the depth we desired, in our design, look 3 steps ahead, us1->opponent->us2, we start evaluation at us2
+        if depth == 0: # we reached the depth we desired, iterative deepening
             return None, self.evaluate(board, reserves, player)
 
         moves = get_valid_moves(board, reserves, player if maximizing else opponent) # Generate legal moves for the side that is about to play, support by the helper
