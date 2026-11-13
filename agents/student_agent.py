@@ -128,6 +128,7 @@ class StudentAgent(Agent):
         if not moves:
             return random_move(board, reserves, player)
 
+        opponent_pieices = np.count_nonzero(board == opponent)
         # Quick win / avoid immediate loss (like greedy_agent)
         safe_moves = []
         for mv in moves:
@@ -138,6 +139,13 @@ class StudentAgent(Agent):
                 return mv
             if w == opponent:
                 continue  # this move uncovers opponent's win
+
+            #Check if the opponent do one more move can the oponent win 
+            #if no we don't even need to simulate the possible outcomes because either way its number of pieces falls short
+
+            if opponent_pieices + 1 < WIN_LENGTH:
+                safe_moves.append(mv)
+                continue
             # check if opponent can win immediately after
             opp_can_win = False
             for om in get_valid_moves(b, r, opponent): # om as opponent move
@@ -150,7 +158,11 @@ class StudentAgent(Agent):
                 safe_moves.append(mv)
 
         candidates = safe_moves or moves # the or moves is for situation: if every move will let opponent win, even we don't want, we have to play something
-
+        
+        # make the agent avoid running uncessary moves when you have one safest move or only on move
+        if(len(candidates) == 1):
+            return candidates[0]
+        
         # iterative deepening with time control
         best_move = candidates[0] # initialize so even we run out of time, we still play something
         for depth in range(1, self.max_depth + 1):
