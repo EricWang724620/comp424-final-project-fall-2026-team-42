@@ -142,7 +142,6 @@ class StudentAgent(Agent):
 
             #Check if the opponent do one more move can the oponent win 
             #if no we don't even need to simulate the possible outcomes because either way its number of pieces falls short
-
             if opponent_pieices + 1 < WIN_LENGTH:
                 safe_moves.append(mv)
                 continue
