@@ -72,7 +72,8 @@ class StudentAgent(Agent):
         moves = get_valid_moves(board, reserves, player if maximizing else opponent) # Generate legal moves for the side that is about to play, support by the helper
         if not moves: # no moves left, so a very bad state, award if we can force opponent get there, penalty if we move there
             return None, -1000 if maximizing else 1000
-
+        else:
+            np.random.shuffle(moves) # randomize the given legal moves, try to avoid bad search result by searching through the fix order given by get_valid_moves
         best_move = None
         if maximizing:
             best_val = -np.inf
@@ -127,6 +128,8 @@ class StudentAgent(Agent):
         moves = get_valid_moves(board, reserves, player) # if no legal move at all, use default, but could just replace by None
         if not moves:
             return random_move(board, reserves, player)
+        else:
+            np.random.shuffle(moves) # also randomizing the order of the moves, may find winning move ealier (close to average time) if it exist
 
         opponent_pieices = np.count_nonzero(board == opponent)
         # Quick win / avoid immediate loss (like greedy_agent)
