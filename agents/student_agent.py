@@ -62,18 +62,26 @@ class StudentAgent(Agent):
         score -= 30 * reserves[opp][LARGE] + 15 * reserves[opp][MEDIUM] + 5 * reserves[opp][SMALL]
         return score
     def _minimax(self, board, reserves, player, opponent, depth, deadline,
-                 alpha, beta, maximizing):
+                 alpha, beta, maximizing, moves=None):
         if time.perf_counter() >= deadline: # stop when close to time limit 2s, our design it to stop at 1.85, leave some space for rest of the program
             return None, 0
 
         if depth == 0: # we reached the depth we desired, iterative deepening
             return None, self.evaluate(board, reserves, player)
-
+        
+        """
         moves = get_valid_moves(board, reserves, player if maximizing else opponent) # Generate legal moves for the side that is about to play, support by the helper
         if not moves: # no moves left, so a very bad state, award if we can force opponent get there, penalty if we move there
             return None, -1000 if maximizing else 1000
         else:
             np.random.shuffle(moves) # randomize the given legal moves, try to avoid bad search result by searching through the fix order given by get_valid_moves
+        """
+        if moves is None:
+            moves = get_valid_moves(board, reserves, player if maximizing else opponent)
+            np.random.shuffle(moves)
+        if not moves:
+            return None, -1000 if maximizing else 1000
+
         best_move = None
         if maximizing:
             best_val = -np.inf
@@ -172,7 +180,7 @@ class StudentAgent(Agent):
                 break
             move, val = self._minimax(  # run our minimax then return best move found within time limit
                 board, reserves, player, opponent, depth, deadline,
-                alpha=-np.inf, beta=np.inf, maximizing=True
+                alpha=-np.inf, beta=np.inf, maximizing=True, moves=candidates
             )
             if move is not None:
                 best_move = move
