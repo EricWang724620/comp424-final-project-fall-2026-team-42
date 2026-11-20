@@ -7,6 +7,9 @@ from constants import *
 import numpy as np
 import time
 
+class SearchTimeout(Exception):
+    pass
+
 @register_agent("student_agent")          # do not change this string
 class StudentAgent(Agent):
     def __init__(self):
@@ -64,7 +67,7 @@ class StudentAgent(Agent):
     def _minimax(self, board, reserves, player, opponent, depth, deadline,
                  alpha, beta, maximizing, moves=None):
         if time.perf_counter() >= deadline: # stop when close to time limit 2s, our design it to stop at 1.85, leave some space for rest of the program
-            return None, 0
+            raise SearchTimeout()
 
         if depth == 0: # we reached the depth we desired, iterative deepening
             return None, self.evaluate(board, reserves, player)
@@ -178,10 +181,13 @@ class StudentAgent(Agent):
         for depth in range(1, self.max_depth + 1):
             if time.perf_counter() >= deadline: # if times almost up, stop search
                 break
-            move, val = self._minimax(  # run our minimax then return best move found within time limit
-                board, reserves, player, opponent, depth, deadline,
-                alpha=-np.inf, beta=np.inf, maximizing=True, moves=candidates
-            )
+            try:
+                move, val = self._minimax(  # run our minimax then return best move found within time limit
+                    board, reserves, player, opponent, depth, deadline,
+                    alpha=-np.inf, beta=np.inf, maximizing=True, moves=candidates
+                )
+            except SearchTimeout:
+                break
             if move is not None:
                 best_move = move
 
