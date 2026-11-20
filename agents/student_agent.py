@@ -8,6 +8,7 @@ import numpy as np
 import time
 
 class SearchTimeout(Exception):
+    #ensures that other exceptions do not interfere with our custom exception (it makes it more reliable)
     pass
 
 @register_agent("student_agent")          # do not change this string
@@ -67,6 +68,7 @@ class StudentAgent(Agent):
     def _minimax(self, board, reserves, player, opponent, depth, deadline,
                  alpha, beta, maximizing, moves=None):
         if time.perf_counter() >= deadline: # stop when close to time limit 2s, our design it to stop at 1.85, leave some space for rest of the program
+            # then skips till SearchTimeout returning the previous depth's best move
             raise SearchTimeout()
 
         if depth == 0: # we reached the depth we desired, iterative deepening
@@ -180,6 +182,8 @@ class StudentAgent(Agent):
                     alpha=-np.inf, beta=np.inf, maximizing=True, moves=candidates
                 )
             except SearchTimeout:
+                 # Time ran out mid-depth, so this depth's result is incomplete and untrustworthy.
+                 # best_move still holds the answer from the last depth that fully finished, so stop and play that.
                 break
             if move is not None:
                 best_move = move
