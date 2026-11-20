@@ -18,7 +18,7 @@ class StudentAgent(Agent):
         super().__init__()
         self.name = "StudentAgent"
         self.time_margin = 0.15          # leave safety margin, could be change later
-        self.max_depth = 3  # maximum search depth, could be change later
+        self.max_depth = 5  # maximum search depth, could be change later
         # self.cache = {}  # cache for memoization, may use in the future for speed imporvement
 
     def evaluate(self, board, reserves, player):
