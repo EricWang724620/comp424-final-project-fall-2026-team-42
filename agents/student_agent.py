@@ -72,13 +72,6 @@ class StudentAgent(Agent):
         if depth == 0: # we reached the depth we desired, iterative deepening
             return None, self.evaluate(board, reserves, player)
         
-        """
-        moves = get_valid_moves(board, reserves, player if maximizing else opponent) # Generate legal moves for the side that is about to play, support by the helper
-        if not moves: # no moves left, so a very bad state, award if we can force opponent get there, penalty if we move there
-            return None, -1000 if maximizing else 1000
-        else:
-            np.random.shuffle(moves) # randomize the given legal moves, try to avoid bad search result by searching through the fix order given by get_valid_moves
-        """
         if moves is None:
             moves = get_valid_moves(board, reserves, player if maximizing else opponent)
             np.random.shuffle(moves)
