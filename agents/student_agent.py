@@ -2,7 +2,7 @@
 from agents.agent import Agent
 from store import register_agent
 from helpers import (Move, get_valid_moves, execute_move, check_winner,
-                     check_endgame, random_move, copy_state, top_view, LINES, state_key)
+                     check_endgame, random_move, copy_state, top_view, LINES, state_key, has_line)
 from constants import *
 import numpy as np
 import time
@@ -51,14 +51,50 @@ class StudentAgent(Agent):
                 score += 60
             elif opp_count == WIN_LENGTH - 2 and empty == 2: score -= 50 # opponent have a 2 in a row
 
-        # 2. Large piece control
+        # 2. Large piece control + Reveal Risk
         # the larger the piece, more hard to cover it, award pieces controlling by their size on the board
         for r in range(4):
             for c in range(4):
-                if owners[r, c] == player and sizes[r, c] == LARGE:
+                owner = owners[r, c]
+                size = sizes[r, c]
+            # large pieces
+                if owner == player and size == LARGE:
                     score += 40
-                elif owners[r, c] == opp and sizes[r, c] == LARGE:
+                elif owner == opp and size == LARGE:
                     score -= 40
+            # Reveal Risk
+                if owner == player and size > SMALL:
+                # Is there an opponent piece underneath?
+                    has_opp_under = False
+                    for s in range(size):
+                        if board[r, c, s] == opp:
+                            has_opp_under = True
+                            break
+
+                    if has_opp_under:
+                        # Temporarily lift our piece
+                        board[r, c, size] = EMPTY
+                        new_owners, _ = top_view(board)
+
+                        if has_line(new_owners, opp):
+                            score -= 200000          # uncovering a win leading to lose, even same move complete our line at sametime
+                        else:
+                            # also penalize giving a strong threat
+                            for line in LINES[WIN_LENGTH]:
+                                opp_count = empty = 0
+                                for rr, cc in line:
+                                    cell = new_owners[rr, cc]
+                                    if cell == opp:
+                                        opp_count += 1
+                                    elif cell == 0:
+                                        empty += 1
+                                if opp_count == 3 and empty == 1:
+                                    score -= 10000      # giving out a win move
+                                elif opp_count == 2 and empty == 2:
+                                    score -= 200
+
+                        # Restore
+                        board[r, c, size] = player
         # 3. Reserves
         # the pieces still in hands, also award by their size, but this time is smaller than the on board
         # since it is not controlling anything yet, and desired block may already controlled by opponent
