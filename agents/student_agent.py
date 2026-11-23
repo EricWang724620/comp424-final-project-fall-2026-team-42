@@ -6,6 +6,7 @@ from helpers import (Move, get_valid_moves, execute_move, check_winner,
 from constants import *
 import numpy as np
 import time
+import sys
 
 class SearchTimeout(Exception):
     #ensures that other exceptions do not interfere with our custom exception (it makes it more reliable)
@@ -21,7 +22,12 @@ class StudentAgent(Agent):
         self.time_margin = 0.15          # leave safety margin, could be change later
         self.max_depth = 5  # maximum search depth, could be change later
         # self.cache = {}  # cache for memoization, may use in the future for speed imporvement
-
+        self.cache = {}
+        
+        #64 MiB budget  that leaves a lot of room within the overall limit
+        self.cahce_budget_bytes = 64 * 1024 * 1024
+        self.cache_entry_bytes = 0
+        self.cache_full = False
     def evaluate(self, board, reserves, player):
         """Simple evaluation: count own almost-wins and block opponent's."""
         # this version does not include factor of useable pieces, heuristic function etc.. could be furthur improved
@@ -106,9 +112,38 @@ class StudentAgent(Agent):
         if time.perf_counter() >= deadline: # stop when close to time limit 2s, our design it to stop at 1.85, leave some space for rest of the program
             # then skips till SearchTimeout returning the previous depth's best move
             raise SearchTimeout()
+        
+        #whose move we are simulating 
+        player_to_move = player if maximizing else opponent
+        # we can later check if this key already exist into the cache 
+        key = state_key(board, reserves, player_to_move)
+
 
         if depth == 0: # we reached the depth we desired, iterative deepening
-            return None, self.evaluate(board, reserves, player)
+            # have we saved an evaluation for this position ?
+            if key in self.cache:
+                return None, self.cache[key]
+            score = int(self.evaluate(board, reserves, player)) # converts the evaluation to an integer so we have one unique type
+
+            if not self.cache_full:
+                self.cache[key] = score
+                
+                # account for the new object the position and its score
+                self.cache_entry_bytes += (
+                    sys.getsizeof(key) + sys.getsizeof(score)
+                )
+
+                # the size of the dictionary it self
+                cache_bytes = sys.getsizeof(self.cache) + self.cache_entry_bytes
+                #Fall back:
+                """
+                exceed the budget 
+                """
+                ## can lead to small  over shoot but we have 64 MIB  1014 * 1024
+                if cache_bytes > self.cahce_budget_bytes:
+                    self.cache_full = True
+
+            return None, score
         
         if moves is None:
             moves = get_valid_moves(board, reserves, player if maximizing else opponent)
