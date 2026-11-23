@@ -2,10 +2,14 @@
 from agents.agent import Agent
 from store import register_agent
 from helpers import (Move, get_valid_moves, execute_move, check_winner,
-                     check_endgame, random_move, copy_state, top_view, LINES, state_key)
+                     check_endgame, random_move, copy_state, top_view, LINES, state_key, has_line)
 from constants import *
 import numpy as np
 import time
+
+class SearchTimeout(Exception):
+    #ensures that other exceptions do not interfere with our custom exception (it makes it more reliable)
+    pass
 
 @register_agent("student_agent")          # do not change this string
 class StudentAgent(Agent):
@@ -15,7 +19,7 @@ class StudentAgent(Agent):
         super().__init__()
         self.name = "StudentAgent"
         self.time_margin = 0.15          # leave safety margin, could be change later
-        self.max_depth = 3  # maximum search depth, could be change later
+        self.max_depth = 5  # maximum search depth, could be change later
         # self.cache = {}  # cache for memoization, may use in the future for speed imporvement
 
     def evaluate(self, board, reserves, player):
@@ -47,14 +51,50 @@ class StudentAgent(Agent):
                 score += 60
             elif opp_count == WIN_LENGTH - 2 and empty == 2: score -= 50 # opponent have a 2 in a row
 
-        # 2. Large piece control
+        # 2. Large piece control + Reveal Risk
         # the larger the piece, more hard to cover it, award pieces controlling by their size on the board
         for r in range(4):
             for c in range(4):
-                if owners[r, c] == player and sizes[r, c] == LARGE:
+                owner = owners[r, c]
+                size = sizes[r, c]
+            # large pieces
+                if owner == player and size == LARGE:
                     score += 40
-                elif owners[r, c] == opp and sizes[r, c] == LARGE:
+                elif owner == opp and size == LARGE:
                     score -= 40
+            # Reveal Risk
+                if owner == player and size > SMALL:
+                # Is there an opponent piece underneath?
+                    has_opp_under = False
+                    for s in range(size):
+                        if board[r, c, s] == opp:
+                            has_opp_under = True
+                            break
+
+                    if has_opp_under:
+                        # Temporarily lift our piece
+                        board[r, c, size] = EMPTY
+                        new_owners, _ = top_view(board)
+
+                        if has_line(new_owners, opp):
+                            score -= 2000          # uncovering a win is very bad
+                        else:
+                            # also penalize giving a strong threat
+                            for line in LINES[WIN_LENGTH]:
+                                opp_count = empty = 0
+                                for rr, cc in line:
+                                    cell = new_owners[rr, cc]
+                                    if cell == opp:
+                                        opp_count += 1
+                                    elif cell == 0:
+                                        empty += 1
+                                if opp_count == 3 and empty == 1:
+                                    score -= 400
+                                elif opp_count == 2 and empty == 2:
+                                    score -= 40
+
+                        # Restore
+                        board[r, c, size] = player
         # 3. Reserves
         # the pieces still in hands, also award by their size, but this time is smaller than the on board
         # since it is not controlling anything yet, and desired block may already controlled by opponent
@@ -62,18 +102,20 @@ class StudentAgent(Agent):
         score -= 30 * reserves[opp][LARGE] + 15 * reserves[opp][MEDIUM] + 5 * reserves[opp][SMALL]
         return score
     def _minimax(self, board, reserves, player, opponent, depth, deadline,
-                 alpha, beta, maximizing):
+                 alpha, beta, maximizing, moves=None):
         if time.perf_counter() >= deadline: # stop when close to time limit 2s, our design it to stop at 1.85, leave some space for rest of the program
-            return None, 0
+            # then skips till SearchTimeout returning the previous depth's best move
+            raise SearchTimeout()
 
         if depth == 0: # we reached the depth we desired, iterative deepening
             return None, self.evaluate(board, reserves, player)
-
-        moves = get_valid_moves(board, reserves, player if maximizing else opponent) # Generate legal moves for the side that is about to play, support by the helper
-        if not moves: # no moves left, so a very bad state, award if we can force opponent get there, penalty if we move there
+        
+        if moves is None:
+            moves = get_valid_moves(board, reserves, player if maximizing else opponent)
+            np.random.shuffle(moves)
+        if not moves:
             return None, -1000 if maximizing else 1000
-        else:
-            np.random.shuffle(moves) # randomize the given legal moves, try to avoid bad search result by searching through the fix order given by get_valid_moves
+
         best_move = None
         if maximizing:
             best_val = -np.inf
@@ -170,10 +212,15 @@ class StudentAgent(Agent):
         for depth in range(1, self.max_depth + 1):
             if time.perf_counter() >= deadline: # if times almost up, stop search
                 break
-            move, val = self._minimax(  # run our minimax then return best move found within time limit
-                board, reserves, player, opponent, depth, deadline,
-                alpha=-np.inf, beta=np.inf, maximizing=True
-            )
+            try:
+                move, val = self._minimax(  # run our minimax then return best move found within time limit
+                    board, reserves, player, opponent, depth, deadline,
+                    alpha=-np.inf, beta=np.inf, maximizing=True, moves=candidates
+                )
+            except SearchTimeout:
+                 # Time ran out mid-depth, so this depth's result is incomplete and untrustworthy.
+                 # best_move still holds the answer from the last depth that fully finished, so stop and play that.
+                break
             if move is not None:
                 best_move = move
 
