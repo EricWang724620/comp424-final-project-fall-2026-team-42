@@ -77,7 +77,7 @@ class StudentAgent(Agent):
                         new_owners, _ = top_view(board)
 
                         if has_line(new_owners, opp):
-                            score -= 2000          # uncovering a win is very bad
+                            score -= 200000          # uncovering a win leading to lose, even same move complete our line at sametime
                         else:
                             # also penalize giving a strong threat
                             for line in LINES[WIN_LENGTH]:
@@ -89,9 +89,9 @@ class StudentAgent(Agent):
                                     elif cell == 0:
                                         empty += 1
                                 if opp_count == 3 and empty == 1:
-                                    score -= 400
+                                    score -= 10000      # giving out a win move
                                 elif opp_count == 2 and empty == 2:
-                                    score -= 40
+                                    score -= 200
 
                         # Restore
                         board[r, c, size] = player
