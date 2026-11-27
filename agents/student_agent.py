@@ -4,6 +4,7 @@ from store import register_agent
 from helpers import (Move, get_valid_moves, execute_move, check_winner,
                      check_endgame, random_move, copy_state, top_view, LINES, state_key, has_line)
 from constants import *
+from collections import OrderedDict
 import numpy as np
 import time
 import sys
@@ -21,21 +22,18 @@ class StudentAgent(Agent):
         self.name = "StudentAgent"
         self.time_margin = 0.15          # leave safety margin, could be change later
         self.max_depth = 5  # maximum search depth, could be change later
-        # self.cache = {}  # cache for memoization, may use in the future for speed imporvement
-        self.cache = {}
+        self.cache = OrderedDict()
         
         #64 MiB budget  that leaves a lot of room within the overall limit
-        self.cahce_budget_bytes = 64 * 1024 * 1024
+        self.cache_budget_bytes = 64 * 1024 * 1024
         self.cache_entry_bytes = 0
-        self.cache_full = False
     def evaluate(self, board, reserves, player):
-        """Simple evaluation: count own almost-wins and block opponent's."""
-        # this version does not include factor of useable pieces, heuristic function etc.. could be furthur improved
         owners, sizes = top_view(board) # who owns the top piece at (r,c): 0=empty, 1 or 2=player, 3=obstacle
         score = 0
         opp = 3 - player # player number is 1 or 2, 3 - our number is the opponent number
         for line in LINES[WIN_LENGTH]: # Loop over every possible 4 in a row line on the board
             own = opp_count = empty = 0
+            blocked = False
             for r, c in line:       # r,c refers to row, column respectively
                 cell = owners[r, c]
                 if cell == player:
@@ -44,7 +42,10 @@ class StudentAgent(Agent):
                     opp_count += 1
                 elif cell == 0:
                     empty += 1
+                elif cell == 3:
+                    blocked = True
                 # cell == 3 is obstacle this line is dead, ignore
+            if blocked: continue
             if own == WIN_LENGTH: # we win
                 score += 10000
             elif opp_count == WIN_LENGTH: # opponent win
@@ -57,7 +58,7 @@ class StudentAgent(Agent):
                 score += 60
             elif opp_count == WIN_LENGTH - 2 and empty == 2: score -= 50 # opponent have a 2 in a row
 
-        # 2. Large piece control + Reveal Risk
+        # 2. Large piece control
         # the larger the piece, more hard to cover it, award pieces controlling by their size on the board
         for r in range(4):
             for c in range(4):
@@ -68,39 +69,6 @@ class StudentAgent(Agent):
                     score += 40
                 elif owner == opp and size == LARGE:
                     score -= 40
-            # Reveal Risk
-                if owner == player and size > SMALL:
-                # Is there an opponent piece underneath?
-                    has_opp_under = False
-                    for s in range(size):
-                        if board[r, c, s] == opp:
-                            has_opp_under = True
-                            break
-
-                    if has_opp_under:
-                        # Temporarily lift our piece
-                        board[r, c, size] = EMPTY
-                        new_owners, _ = top_view(board)
-
-                        if has_line(new_owners, opp):
-                            score -= 200000          # uncovering a win leading to lose, even same move complete our line at sametime
-                        else:
-                            # also penalize giving a strong threat
-                            for line in LINES[WIN_LENGTH]:
-                                opp_count = empty = 0
-                                for rr, cc in line:
-                                    cell = new_owners[rr, cc]
-                                    if cell == opp:
-                                        opp_count += 1
-                                    elif cell == 0:
-                                        empty += 1
-                                if opp_count == 3 and empty == 1:
-                                    score -= 10000      # giving out a win move
-                                elif opp_count == 2 and empty == 2:
-                                    score -= 200
-
-                        # Restore
-                        board[r, c, size] = player
         # 3. Reserves
         # the pieces still in hands, also award by their size, but this time is smaller than the on board
         # since it is not controlling anything yet, and desired block may already controlled by opponent
@@ -122,26 +90,20 @@ class StudentAgent(Agent):
         if depth == 0: # we reached the depth we desired, iterative deepening
             # have we saved an evaluation for this position ?
             if key in self.cache:
+                self.cache.move_to_end(key)
                 return None, self.cache[key]
             score = int(self.evaluate(board, reserves, player)) # converts the evaluation to an integer so we have one unique type
 
-            if not self.cache_full:
-                self.cache[key] = score
-                
-                # account for the new object the position and its score
-                self.cache_entry_bytes += (
-                    sys.getsizeof(key) + sys.getsizeof(score)
-                )
+            self.cache[key] = score
+            self.cache_entry_bytes += sys.getsizeof(key) + sys.getsizeof(score)
 
-                # the size of the dictionary it self
-                cache_bytes = sys.getsizeof(self.cache) + self.cache_entry_bytes
-                #Fall back:
-                """
-                exceed the budget 
-                """
-                ## can lead to small  over shoot but we have 64 MIB  1014 * 1024
-                if cache_bytes > self.cahce_budget_bytes:
-                    self.cache_full = True
+            # Remove oldest entries until we are back under budget, LRU process
+            while (sys.getsizeof(self.cache) + self.cache_entry_bytes > self.cache_budget_bytes and self.cache):
+                old_key, old_score = self.cache.popitem(last=False)  # oldest
+                self.cache_entry_bytes -= sys.getsizeof(old_key) + sys.getsizeof(old_score)
+                # safety: never go negative
+                if self.cache_entry_bytes < 0:
+                    self.cache_entry_bytes = 0
 
             return None, score
         
@@ -208,10 +170,15 @@ class StudentAgent(Agent):
         else:
             np.random.shuffle(moves) # also randomizing the order of the moves, may find winning move ealier (close to average time) if it exist
 
-        opponent_pieices = np.count_nonzero(board == opponent)
+        opponent_pieces = np.count_nonzero(board == opponent)
         # Quick win / avoid immediate loss (like greedy_agent)
         safe_moves = []
+        filter_complete = True;
         for mv in moves:
+            # Check deadline before evaluating another candidate
+            if time.perf_counter() >= deadline:
+                filter_complete = False
+                break
             b, r = copy_state(board, reserves)
             execute_move(b, r, player, mv)
             w = check_winner(b, player)
@@ -222,20 +189,28 @@ class StudentAgent(Agent):
 
             #Check if the opponent do one more move can the oponent win 
             #if no we don't even need to simulate the possible outcomes because either way its number of pieces falls short
-            if opponent_pieices + 1 < WIN_LENGTH:
+            if opponent_pieces + 1 < WIN_LENGTH:
                 safe_moves.append(mv)
                 continue
             # check if opponent can win immediately after
             opp_can_win = False
             for om in get_valid_moves(b, r, opponent): # om as opponent move
+                # Check deadline inside the nested loop too
+                if time.perf_counter() >= deadline:
+                    filter_complete = False
+                    break
                 b2, r2 = copy_state(b, r)
                 execute_move(b2, r2, opponent, om)
                 if check_winner(b2, opponent) == opponent:
                     opp_can_win = True
                     break
+            if not filter_complete:
+                break
             if not opp_can_win: # Only keep moves that do not let the opponent win immediately
                 safe_moves.append(mv)
-
+        # If filtering was interrupted, discard its incomplete results
+        if not filter_complete:
+            return safe_moves[0] if safe_moves else moves[0]        
         candidates = safe_moves or moves # the or moves is for situation: if every move will let opponent win, even we don't want, we have to play something
         
         # make the agent avoid running uncessary moves when you have one safest move or only on move
